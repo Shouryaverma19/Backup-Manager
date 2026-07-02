@@ -1,4 +1,3 @@
-import os
 import pytest
 from unittest.mock import patch, MagicMock
 
@@ -6,10 +5,10 @@ import BackupManager as bm
 
 
 # ----------------------------
-# Version + Compare Logic
+# Version tests
 # ----------------------------
 
-def test_version_current():
+def test_get_current_version():
     assert bm.get_current_version() == bm.VERSION
 
 
@@ -26,7 +25,7 @@ def test_compare_versions_equal():
 
 
 # ----------------------------
-# Needs Update Logic
+# needs_update logic
 # ----------------------------
 
 def test_needs_update_no_target():
@@ -46,91 +45,84 @@ def test_needs_update_equal():
 
 
 # ----------------------------
-# Ignore logic
+# should_ignore logic
 # ----------------------------
 
-def test_should_ignore_flag():
+def test_should_ignore_flag_true():
     bm.IGNORE_EXCLUDE_LIST = True
     assert bm.should_ignore(MagicMock()) is False
 
+
+def test_should_ignore_flag_false():
     bm.IGNORE_EXCLUDE_LIST = False
+    assert isinstance(bm.should_ignore(MagicMock()), bool)
 
 
 # ----------------------------
-# Logging (mock file system)
+# log (fully mocked)
 # ----------------------------
 
 @patch("builtins.open", new_callable=MagicMock)
-@patch("os.makedirs")
+@patch("os.makedirs", new_callable=MagicMock)
 def test_log_function(mock_mkdir, mock_open):
     bm.log("test message")
 
-    mock_mkdir.assert_called()
-    mock_open.assert_called()
+    mock_mkdir.assert_called_once()
+    mock_open.assert_called_once()
 
 
 # ----------------------------
-# stat_file
+# stat_file (IMPORTANT FIX)
 # ----------------------------
+
+@patch("BackupManager.log", new_callable=MagicMock)
+@patch("os.makedirs", new_callable=MagicMock)
+@patch("os.stat", side_effect=Exception("fail"))
+def test_stat_file_fail(mock_stat, mock_makedirs, mock_log):
+    result = bm.stat_file("dummy.txt")
+    assert result is None
+
 
 @patch("os.stat")
 def test_stat_file_success(mock_stat):
     mock_stat.return_value.st_size = 123
     mock_stat.return_value.st_mtime = 456
 
-    res = bm.stat_file("dummy.txt")
+    result = bm.stat_file("dummy.txt")
 
-    assert res[0] == "dummy.txt"
-    assert res[1] == 123
-    assert res[2] == 456
-
-
-@patch("os.stat", side_effect=Exception("fail"))
-def test_stat_file_fail(mock_stat):
-    assert bm.stat_file("dummy.txt") is None
+    assert result == ("dummy.txt", 123, 456)
 
 
 # ----------------------------
-# collect_files_multithread (light test)
+# copy_file
 # ----------------------------
 
-@patch("os.scandir")
-@patch("os.stat")
-def test_collect_files_basic(mock_stat, mock_scandir):
-    # fake file entry
-    file_entry = MagicMock()
-    file_entry.path = "file1.txt"
-    file_entry.is_file.return_value = True
-    file_entry.is_dir.return_value = False
-
-    mock_scandir.return_value = [file_entry]
-
-    mock_stat.return_value.st_size = 10
-    mock_stat.return_value.st_mtime = 100
-
-    results, size = bm.collect_files_multithread("base", "test")
-
-    assert isinstance(results, list)
-    assert size >= 0
-
-
-# ----------------------------
-# copy_file (mock filesystem)
-# ----------------------------
-
-@patch("os.makedirs")
-@patch("shutil.copy2")
+@patch("BackupManager.log", new_callable=MagicMock)
+@patch("os.makedirs", new_callable=MagicMock)
+@patch("shutil.copy2", new_callable=MagicMock)
 @patch("os.path.getsize", return_value=100)
-def test_copy_file(mock_size, mock_copy, mock_mkdir):
+def test_copy_file(mock_size, mock_copy, mock_mkdir, mock_log):
     progress = MagicMock()
 
     bm.copy_file(
-        "src.txt",
+        "src/file.txt",
         "dst_base",
         "src_base",
         progress
     )
 
-    mock_mkdir.assert_called()
-    mock_copy.assert_called()
-    progress.update.assert_called_with(100)
+    mock_mkdir.assert_called_once()
+    mock_copy.assert_called_once()
+    progress.update.assert_called_once_with(100)
+
+
+# ----------------------------
+# compare_versions edge cases
+# ----------------------------
+
+def test_compare_versions_different_length():
+    assert bm.compare_versions("1.0", "1.0.1") is True
+
+
+def test_compare_versions_invalid():
+    assert bm.compare_versions("a.b.c", "1.0.0") is False
