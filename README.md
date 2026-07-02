@@ -11,13 +11,13 @@ The program intelligently compares files based on size and modification date, an
 * Multithreaded file scanning
 * Fast parallel copying
 * Intelligent file comparison (size + modification time)
+* Easy CLI usage for automation
 * Optional Mirror Mode
 * GitHub update system
 * Supports large directories
 * Symlink-safe (`follow_symlinks=False`)
 * Progress bars with `tqdm` _(nice)_
 * Optimized for NAS / SMB shares
-* Easy CLI usage
 
 ---
 
@@ -39,17 +39,31 @@ pip install tqdm prompt_toolkit requests
 
 ## Usage
 
-Start the program:
+### Standard run (interactive mode)
 
 ```bash
 python backup_manager.py
 ```
 
-Then:
+---
 
-1. Select the source folder
-2. Select the destination folder
-3. The backup starts automatically
+### CLI Arguments
+
+You can also run the tool with arguments:
+
+```bash
+python BackupManager.py
+python BackupManager.py --source D:\Data --target \\nas\backup
+python BackupManager.py --source D:\Data --target \\nas\backup --mirror
+python BackupManager.py --update
+```
+
+**Arguments:**
+
+* `--source` → Source directory
+* `--target` → Target directory
+* `--mirror` → Enables mirror mode (deletes files in target that do not exist in source)
+* `--update` → Checks and installs latest GitHub release
 
 ---
 
@@ -129,11 +143,10 @@ This makes the backup very fast, especially for large folders.
 
 ---
 
-
 ## Planned Features
 
 * GUI version
-*  ~~Exclusion filters (`.git`, `node_modules`, etc.)~~ (v1.1.0)
+* ~~Exclusion filters (`.git`, `node_modules`, etc.)~~ (v1.1.0)
 * Optional compression
 * Optional encryption
 * Backup profiles
@@ -143,3 +156,4 @@ This makes the backup very fast, especially for large folders.
 ## License
 
 MIT License
+```
