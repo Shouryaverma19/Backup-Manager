@@ -27,7 +27,7 @@ The program intelligently compares files based on size and modification date, an
 ### Requirements
 
 * Python 3.10+
-* Windows or Linux
+* Windows, Ubuntu, MacOs
 * Network share / NAS (optional)
 
 ### Required Packages
