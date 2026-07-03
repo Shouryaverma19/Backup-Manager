@@ -1,3 +1,4 @@
+[![Python application](https://github.com/Dari0o/Backup-Manager/actions/workflows/python-app.yml/badge.svg)](https://github.com/Dari0o/Backup-Manager/actions/workflows/python-app.yml)
 # NAS Backup Manager
 
 A fast and multithreaded backup tool.
