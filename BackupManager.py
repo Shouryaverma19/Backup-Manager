@@ -2,6 +2,8 @@ import os
 import shutil
 import sys
 import argparse
+import importlib.util
+import subprocess
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed, wait
 import tqdm as tqdm_
@@ -77,6 +79,145 @@ def compare_versions(current: str, available: str) -> bool:
 
     except Exception:
         return False
+
+
+def detect_environment() -> Dict[str, str]:
+    """Detects the current operating system and Linux distribution."""
+    if sys.platform.startswith("win"):
+        return {"os": "windows"}
+
+    if sys.platform == "darwin":
+        return {"os": "macos"}
+
+    if sys.platform.startswith("linux"):
+        distro = "unknown"
+        distro_like = ""
+        os_release_path = "/etc/os-release"
+
+        if os.path.exists(os_release_path):
+            try:
+                with open(os_release_path, "r", encoding="utf-8") as handle:
+                    for line in handle:
+                        if "=" not in line:
+                            continue
+                        key, value = line.split("=", 1)
+                        key = key.strip().lower()
+                        value = value.strip().strip('"')
+                        if key == "id":
+                            distro = value.lower()
+                        elif key == "id_like":
+                            distro_like = value.lower()
+            except OSError:
+                pass
+
+        return {"os": "linux", "distro": distro, "distro_like": distro_like}
+
+    return {"os": "unknown"}
+
+
+def get_dependency_install_commands(environment: Optional[Dict[str, str]] = None) -> List[List[str]]:
+    """Returns the package-manager commands needed to install dependencies."""
+    env = environment or detect_environment()
+    os_name = env.get("os", "unknown")
+    distro = (env.get("distro") or "").lower()
+    distro_like = (env.get("distro_like") or "").lower()
+
+    python_packages = [sys.executable, "-m", "pip", "install", "--user", "-U", "prompt_toolkit", "tqdm", "requests"]
+
+    if os_name == "windows":
+        return [
+            ["winget", "install", "--id", "7zip.7zip", "-e", "--accept-source-agreements", "--accept-package-agreements"],
+            python_packages,
+        ]
+
+    if os_name == "macos":
+        return [
+            ["brew", "install", "p7zip"],
+            python_packages,
+        ]
+
+    if os_name == "linux":
+        apt_like = any(item in distro or item in distro_like for item in ["debian", "ubuntu", "linuxmint", "raspbian", "pop"])
+        if apt_like:
+            return [
+                ["apt-get", "update"],
+                ["apt-get", "install", "-y", "p7zip-full"],
+                python_packages,
+            ]
+
+        yum_like = any(item in distro or item in distro_like for item in ["fedora", "rhel", "centos", "rocky", "almalinux"])
+        if yum_like:
+            return [
+                ["dnf", "install", "-y", "p7zip"],
+                python_packages,
+            ]
+
+        arch_like = any(item in distro or item in distro_like for item in ["arch", "manjaro"])
+        if arch_like:
+            return [
+                ["pacman", "-Sy", "--noconfirm", "p7zip"],
+                python_packages,
+            ]
+
+        return [
+            ["apt-get", "update"],
+            ["apt-get", "install", "-y", "p7zip-full"],
+            python_packages,
+        ]
+
+    return [python_packages]
+
+
+def _run_command(command: List[str], env: Optional[Dict[str, str]] = None) -> bool:
+    """Executes a command and logs failures without crashing the update flow."""
+    try:
+        if os.name != "nt" and command and command[0] in {"apt-get", "dnf", "pacman", "brew"}:
+            if os.geteuid() != 0 and shutil.which("sudo"):
+                command = ["sudo"] + command
+
+        subprocess.run(command, check=True, env=env)
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+        log(f"Dependency installation failed for {' '.join(command)}: {exc}")
+        return False
+
+
+def _python_module_available(module_name: str) -> bool:
+    return importlib.util.find_spec(module_name) is not None
+
+
+def ensure_dependencies() -> bool:
+    """Installs missing system and Python dependencies needed by BackupManager."""
+    env_info = detect_environment()
+    log(f"Detected environment: {env_info.get('os', 'unknown')} / {env_info.get('distro', 'unknown')}")
+
+    seven_zip_available = shutil.which("7z") is not None or os.path.exists(r"C:\Program Files\7-Zip\7z.exe")
+    required_modules = ["prompt_toolkit", "tqdm", "requests"]
+    missing_modules = [module for module in required_modules if not _python_module_available(module)]
+
+    if seven_zip_available and not missing_modules:
+        log("All dependencies already available")
+        return True
+
+    commands = get_dependency_install_commands(env_info)
+    success = True
+
+    for command in commands:
+        if not command:
+            continue
+
+        if command[0] == sys.executable and len(command) >= 3 and command[1:3] == ["-m", "pip"]:
+            if not missing_modules:
+                continue
+
+        env = os.environ.copy()
+        if command[0] in {"apt-get", "dnf", "pacman"}:
+            env.setdefault("DEBIAN_FRONTEND", "noninteractive")
+
+        if not _run_command(command, env=env):
+            success = False
+
+    return success
 
 
 def check_for_update() -> Optional[Dict[str, Any]]:
@@ -707,6 +848,9 @@ B a c k u p  -  M a n a g e r
     MIRROR_MODE = args.mirror
 
     if is_update:
+
+        print("Checking dependencies for this system...")
+        ensure_dependencies()
 
         # Update mode: check for updates and install them
         print("Checking for updates...")
